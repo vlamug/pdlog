@@ -25,3 +25,11 @@ curl -X GET localhost:9099 -d '{"offset": 2}'
 #### keywords
 
 write-ahead logs, transaction logs, commit logs
+
+#### Terms
+
+Record - the data stored in out log
+Store - the file we store records in
+Index - the file we store index entries in
+Segment - the abstraction that ties a store and an index together
+Log - the abstraction that ties al the segments together
