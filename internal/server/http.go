@@ -29,7 +29,7 @@ func newHTTPServer() *httpServer {
 }
 
 type ProduceRequest struct {
-	Record Record `json:"record"`
+	Record *Record `json:"record"`
 }
 
 type ProducerResponse struct {
@@ -41,7 +41,7 @@ type ConsumeRequest struct {
 }
 
 type ConsumeResponse struct {
-	Record Record `json:"record"`
+	Record *Record `json:"record"`
 }
 
 func (s *httpServer) handleProduce(w http.ResponseWriter, r *http.Request) {
