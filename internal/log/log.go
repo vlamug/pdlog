@@ -1,7 +1,6 @@
 package log
 
 import (
-	"fmt"
 	"io"
 	"os"
 	"path"
@@ -51,7 +50,6 @@ func (l *Log) setup() error {
 	}
 
 	var baseOffsets []uint64
-	fmt.Println(">>>", files)
 	for _, file := range files {
 		offStr := strings.TrimSuffix(file.Name(), path.Ext(file.Name()))
 		off, _ := strconv.ParseUint(offStr, 10, 0)
@@ -109,7 +107,7 @@ func (l *Log) Read(off uint64) (*log_v1.Record, error) {
 	}
 
 	if foundSeg == nil || foundSeg.nextOffset <= off {
-		return nil, fmt.Errorf("offset out of range: %d", off)
+		return nil, log_v1.ErrOffsetOutOfRange{Offset: off}
 	}
 
 	return foundSeg.Read(off)

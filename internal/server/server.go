@@ -2,8 +2,15 @@ package server
 
 import (
 	"context"
+	"google.golang.org/grpc"
+
 	"github.com/vlamug/pdlog/api/v1"
 )
+
+type CommitLog interface {
+	Append(*api.Record) (uint64, error)
+	Read(uint64) (*api.Record, error)
+}
 
 type Config struct {
 	CommitLog Log
@@ -16,7 +23,18 @@ type GRPCServer struct {
 	*Config
 }
 
-func newGRPCServer(config *Config) (srv *GRPCServer, err error) {
+func NewGRPCServer(config *Config) (*grpc.Server, error) {
+	gsrv := grpc.NewServer()
+	srv, err := newGRPCServer(config)
+	if err != nil {
+		return nil, err
+	}
+
+	api.RegisterLogServer(gsrv, srv)
+	return gsrv, nil
+}
+
+func newGRPCServer(config *Config) (*GRPCServer, error) {
 	return &GRPCServer{
 		Config: config,
 	}, nil
@@ -68,8 +86,10 @@ func (s *GRPCServer) ConsumeStream(req *api.ConsumeRequest, stream api.Log_Consu
 			res, err := s.Consume(stream.Context(), req)
 			switch err.(type) {
 			case nil:
-			case ErrOffsetNotFound:
+			case api.ErrOffsetOutOfRange:
 				continue
+			default:
+				return err
 			}
 
 			if err := stream.Send(res); err != nil {
