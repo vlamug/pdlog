@@ -2,12 +2,19 @@ package server
 
 import (
 	"encoding/json"
-	"github.com/gorilla/mux"
 	"net/http"
+
+	"github.com/gorilla/mux"
+	"github.com/vlamug/pdlog/api/v1"
+	logpkg "github.com/vlamug/pdlog/internal/log"
 )
 
-func NewHTTPServer(addr string) *http.Server {
-	srv := newHTTPServer()
+func NewHTTPServer(addr string, dir string, cfg logpkg.Config) (*http.Server, error) {
+	srv, err := newHTTPServer(dir, cfg)
+	if err != nil {
+		return nil, err
+	}
+
 	r := mux.NewRouter()
 	r.HandleFunc("/", srv.handleProduce).Methods(http.MethodPost)
 	r.HandleFunc("/", srv.handleConsume).Methods(http.MethodGet)
@@ -15,17 +22,26 @@ func NewHTTPServer(addr string) *http.Server {
 	return &http.Server{
 		Addr:    addr,
 		Handler: r,
-	}
+	}, nil
 }
 
 type httpServer struct {
-	Log *Log
+	Log *logpkg.Log
 }
 
-func newHTTPServer() *httpServer {
-	return &httpServer{
-		Log: NewLog(),
+func newHTTPServer(dir string, cfg logpkg.Config) (*httpServer, error) {
+	log, err := logpkg.NewLog(dir, cfg)
+	if err != nil {
+		return nil, err
 	}
+
+	return &httpServer{Log: log}, nil
+}
+
+// Record contains log item
+type Record struct {
+	Value  []byte `json:"value"`
+	Offset uint64 `json:"offset"`
 }
 
 type ProduceRequest struct {
@@ -51,7 +67,12 @@ func (s *httpServer) handleProduce(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	offset, err := s.Log.Append(req.Record)
+	record := &api.Record{
+		Value:  req.Record.Value,
+		Offset: req.Record.Offset,
+	}
+
+	offset, err := s.Log.Append(record)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -77,7 +98,10 @@ func (s *httpServer) handleConsume(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	res := ConsumeResponse{Record: record}
+	res := ConsumeResponse{Record: &Record{
+		Value:  record.Value,
+		Offset: record.Offset,
+	}}
 	if err := json.NewEncoder(w).Encode(res); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

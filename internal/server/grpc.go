@@ -2,9 +2,10 @@ package server
 
 import (
 	"context"
-	"google.golang.org/grpc"
 
 	"github.com/vlamug/pdlog/api/v1"
+	logpkg "github.com/vlamug/pdlog/internal/log"
+	"google.golang.org/grpc"
 )
 
 type CommitLog interface {
@@ -12,20 +13,16 @@ type CommitLog interface {
 	Read(uint64) (*api.Record, error)
 }
 
-type Config struct {
-	CommitLog Log
-}
-
 var _ api.LogServer = (*GRPCServer)(nil)
 
 type GRPCServer struct {
 	api.UnimplementedLogServer
-	*Config
+	log *logpkg.Log
 }
 
-func NewGRPCServer(config *Config) (*grpc.Server, error) {
+func NewGRPCServer(log *logpkg.Log) (*grpc.Server, error) {
 	gsrv := grpc.NewServer()
-	srv, err := newGRPCServer(config)
+	srv, err := newGRPCServer(log)
 	if err != nil {
 		return nil, err
 	}
@@ -34,15 +31,16 @@ func NewGRPCServer(config *Config) (*grpc.Server, error) {
 	return gsrv, nil
 }
 
-func newGRPCServer(config *Config) (*GRPCServer, error) {
-	return &GRPCServer{
-		Config: config,
-	}, nil
+func newGRPCServer(log *logpkg.Log) (*GRPCServer, error) {
+	return &GRPCServer{log: log}, nil
 }
 
 func (s *GRPCServer) Produce(_ context.Context, req *api.ProduceRequest) (*api.ProduceResponse, error) {
-	record := NewRecord(req.Record.Offset, req.Record.Value)
-	offset, err := s.CommitLog.Append(record)
+	record := &api.Record{
+		Value:  req.Record.Value,
+		Offset: req.Record.Offset,
+	}
+	offset, err := s.log.Append(record)
 	if err != nil {
 		return nil, err
 	}
@@ -51,7 +49,7 @@ func (s *GRPCServer) Produce(_ context.Context, req *api.ProduceRequest) (*api.P
 }
 
 func (s *GRPCServer) Consume(_ context.Context, req *api.ConsumeRequest) (*api.ConsumeResponse, error) {
-	record, err := s.CommitLog.Read(req.Offset)
+	record, err := s.log.Read(req.Offset)
 	if err != nil {
 		return nil, err
 	}
