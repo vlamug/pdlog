@@ -23,7 +23,7 @@ func getPort() int {
 }
 
 func init() {
-	ports = []int{9001, 9002, 9003, 9004, 9005}
+	ports = []int{9001, 9002, 9003}
 }
 
 func TestMembership(t *testing.T) {
