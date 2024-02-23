@@ -36,6 +36,7 @@ type (
 		DataDir        string
 		HTTPBindAddr   string
 		RPCBindAddr    string
+		SerfBindAddr   string
 		NodeName       string
 		StartJoinAddrs []string
 		ACLModelFile   string
@@ -129,6 +130,7 @@ func (a *Agent) setupGRPC(serverConfig *server.Config) error {
 }
 
 func (a *Agent) setupMembership() error {
+	// TODO(threadedstream): add support for secure communication in future
 	conn, err := grpc.Dial(a.RPCBindAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return err
@@ -139,7 +141,7 @@ func (a *Agent) setupMembership() error {
 	}
 	a.membership, err = discovery.New(a.replicator, &discovery.Config{
 		NodeName: a.NodeName,
-		BindAddr: a.RPCBindAddr,
+		BindAddr: a.SerfBindAddr,
 		Tags: map[string]string{
 			discovery.RpcAddrTagKey: a.RPCBindAddr,
 		},

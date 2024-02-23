@@ -34,7 +34,7 @@ func newHTTPServer(config *Config) (*httpServer, error) {
 
 // Record contains log item
 type Record struct {
-	Value  []byte `json:"value"`
+	Value  string `json:"value"`
 	Offset uint64 `json:"offset"`
 }
 
@@ -62,7 +62,7 @@ func (s *httpServer) handleProduce(w http.ResponseWriter, r *http.Request) {
 	}
 
 	record := &api.Record{
-		Value:  req.Record.Value,
+		Value:  []byte(req.Record.Value),
 		Offset: req.Record.Offset,
 	}
 
@@ -93,7 +93,7 @@ func (s *httpServer) handleConsume(w http.ResponseWriter, r *http.Request) {
 	}
 
 	res := ConsumeResponse{Record: &Record{
-		Value:  record.Value,
+		Value:  string(record.Value),
 		Offset: record.Offset,
 	}}
 	if err := json.NewEncoder(w).Encode(res); err != nil {
