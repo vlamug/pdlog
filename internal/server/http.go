@@ -6,11 +6,10 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/vlamug/pdlog/api/v1"
-	logpkg "github.com/vlamug/pdlog/internal/log"
 )
 
-func NewHTTPServer(addr string, dir string, cfg logpkg.Config) (*http.Server, error) {
-	srv, err := newHTTPServer(dir, cfg)
+func NewHTTPServer(addr string, serverConfig *Config) (*http.Server, error) {
+	srv, err := newHTTPServer(serverConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -26,16 +25,11 @@ func NewHTTPServer(addr string, dir string, cfg logpkg.Config) (*http.Server, er
 }
 
 type httpServer struct {
-	Log *logpkg.Log
+	*Config
 }
 
-func newHTTPServer(dir string, cfg logpkg.Config) (*httpServer, error) {
-	log, err := logpkg.NewLog(dir, cfg)
-	if err != nil {
-		return nil, err
-	}
-
-	return &httpServer{Log: log}, nil
+func newHTTPServer(config *Config) (*httpServer, error) {
+	return &httpServer{Config: config}, nil
 }
 
 // Record contains log item
@@ -72,7 +66,7 @@ func (s *httpServer) handleProduce(w http.ResponseWriter, r *http.Request) {
 		Offset: req.Record.Offset,
 	}
 
-	offset, err := s.Log.Append(record)
+	offset, err := s.CommitLog.Append(record)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -92,7 +86,7 @@ func (s *httpServer) handleConsume(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	record, err := s.Log.Read(req.Offset)
+	record, err := s.CommitLog.Read(req.Offset)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
