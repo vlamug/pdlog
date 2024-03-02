@@ -62,6 +62,7 @@ func New(config Config) (*Agent, error) {
 			return nil, err
 		}
 	}
+  
 	return a, nil
 }
 
@@ -70,13 +71,17 @@ func (a *Agent) setupLogger() error {
 	if err != nil {
 		return err
 	}
+
 	zap.ReplaceGlobals(logger)
+
 	return nil
 }
 
 func (a *Agent) setupLog() error {
 	var err error
+  
 	a.log, err = log.NewLog(a.Config.DataDir, log.Config{})
+
 	return err
 }
 
@@ -116,6 +121,7 @@ func (a *Agent) setupGRPC(serverConfig *server.Config) error {
 	if err != nil {
 		return err
 	}
+
 	ln, err := net.Listen("tcp", a.RPCBindAddr)
 	if err != nil {
 		return err
@@ -126,6 +132,7 @@ func (a *Agent) setupGRPC(serverConfig *server.Config) error {
 			_ = a.Shutdown()
 		}
 	}()
+
 	return nil
 }
 
@@ -135,10 +142,12 @@ func (a *Agent) setupMembership() error {
 	if err != nil {
 		return err
 	}
+  
 	client := api.NewLogClient(conn)
 	a.replicator = &log.Replicator{
 		LocalServer: client,
 	}
+  
 	a.membership, err = discovery.New(a.replicator, &discovery.Config{
 		NodeName: a.NodeName,
 		BindAddr: a.SerfBindAddr,
@@ -147,6 +156,11 @@ func (a *Agent) setupMembership() error {
 		},
 		StartJoinAddrs: a.StartJoinAddrs,
 	})
+
+	if err := a.server.Serve(ln); err != nil {
+		_ = a.Shutdown()
+	}
+
 	return err
 }
 
@@ -157,6 +171,7 @@ func (a *Agent) Shutdown() error {
 	if a.shutdown {
 		return nil
 	}
+
 	a.shutdown = true
 	close(a.shutdowns)
 
@@ -170,10 +185,11 @@ func (a *Agent) Shutdown() error {
 		a.log.Close,
 	}
 
-	for _, fn := range shutdown {
+	for _, fn := range shutdowns {
 		if err := fn(); err != nil {
 			return err
 		}
 	}
+  
 	return nil
 }
