@@ -7,7 +7,7 @@ import (
 	"go.uber.org/zap"
 )
 
-const rpsAddrTagKey = "rpc_addr"
+const RpcAddrTagKey = "rpc_addr"
 
 type Membership struct {
 	cfg     *Config
@@ -95,7 +95,7 @@ func (m *Membership) eventHandler() {
 }
 
 func (m *Membership) handleJoin(member serf.Member) {
-	if err := m.handler.Join(member.Name, member.Tags[rpsAddrTagKey]); err != nil {
+	if err := m.handler.Join(member.Name, member.Tags[RpcAddrTagKey]); err != nil {
 		m.logError(err, "failed to join member", member)
 	}
 }
@@ -115,6 +115,6 @@ func (m *Membership) logError(err error, msg string, member serf.Member) {
 		msg,
 		zap.Error(err),
 		zap.String("name", member.Name),
-		zap.String(rpsAddrTagKey, member.Tags[rpsAddrTagKey]),
+		zap.String(RpcAddrTagKey, member.Tags[RpcAddrTagKey]),
 	)
 }

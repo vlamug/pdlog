@@ -1,9 +1,11 @@
 package agent
 
 import (
-	"fmt"
+	"context"
 	"net"
+	"net/http"
 	"sync"
+	"time"
 
 	"github.com/vlamug/pdlog/api/v1"
 	"github.com/vlamug/pdlog/internal/discovery"
@@ -14,39 +16,37 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
-type Config struct {
-	DataDir        string
-	BindAddr       string
-	RPCPort        int
-	NodeName       string
-	StartJoinAddrs []string
-}
+// Agent runs on every service instance, setting up and connecting all the different components
+type (
+	Agent struct {
+		Config
 
-func (c *Config) RPCAddr() (string, error) {
-	host, _, err := net.SplitHostPort(c.BindAddr)
-	if err != nil {
-		return "", err
+		log        *log.Log
+		httpServer *http.Server
+		grpcServer *grpc.Server
+		membership *discovery.Membership
+		replicator *log.Replicator
+
+		shutdown     bool
+		shutdowns    chan struct{}
+		shutdownLock sync.Mutex
 	}
 
-	return fmt.Sprintf("%s:%d", host, c.RPCPort), nil
-}
+	Config struct {
+		DataDir        string
+		HTTPBindAddr   string
+		RPCBindAddr    string
+		SerfBindAddr   string
+		NodeName       string
+		StartJoinAddrs []string
+		ACLModelFile   string
+		ACLPolicyFile  string
+	}
+)
 
-type Agent struct {
-	cfg *Config
-
-	log        *log.Log
-	server     *grpc.Server
-	membership *discovery.Membership
-	replicator *log.Replicator
-
-	shutdown     bool
-	shutdowns    chan struct{}
-	shutdownLock sync.Mutex
-}
-
-func New(cfg *Config) (*Agent, error) {
+func New(config Config) (*Agent, error) {
 	a := &Agent{
-		cfg:       cfg,
+		Config:    config,
 		shutdowns: make(chan struct{}),
 	}
 
@@ -62,7 +62,7 @@ func New(cfg *Config) (*Agent, error) {
 			return nil, err
 		}
 	}
-
+  
 	return a, nil
 }
 
@@ -79,59 +79,87 @@ func (a *Agent) setupLogger() error {
 
 func (a *Agent) setupLog() error {
 	var err error
-	a.log, err = log.NewLog(
-		a.cfg.DataDir,
-		log.Config{},
-	)
+  
+	a.log, err = log.NewLog(a.Config.DataDir, log.Config{})
 
 	return err
 }
 
 func (a *Agent) setupServer() error {
-	var err error
-	a.server, err = server.NewGRPCServer(a.log)
+	serverConfig := &server.Config{
+		CommitLog: a.log,
+	}
 
-	addr, err := a.cfg.RPCAddr()
-	if err != nil {
+	if err := a.setupGRPC(serverConfig); err != nil {
 		return err
 	}
 
-	ln, err := net.Listen("tcp", addr)
+	return a.setupHTTP(serverConfig)
+}
+
+func (a *Agent) setupHTTP(serverConfig *server.Config) error {
+	var err error
+	a.httpServer, err = server.NewHTTPServer(a.HTTPBindAddr, serverConfig)
 	if err != nil {
 		return err
 	}
 
 	go func() {
-		if err := a.server.Serve(ln); err != nil {
-			_ = a.Shutdown()
+		if err := a.httpServer.ListenAndServe(); err != nil {
+			withTimeoutCtx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+			defer cancel()
+			_ = a.httpServer.Shutdown(withTimeoutCtx)
 		}
 	}()
 
-	return err
+	return nil
 }
 
-func (a *Agent) setupMembership() error {
-	rpcAddr, err := a.cfg.RPCAddr()
+func (a *Agent) setupGRPC(serverConfig *server.Config) error {
+	var err error
+	a.grpcServer, err = server.NewGRPCServer(serverConfig)
 	if err != nil {
 		return err
 	}
 
-	opts := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}
-	conn, err := grpc.Dial(rpcAddr, opts...)
-	client := api.NewLogClient(conn)
-	a.replicator = &log.Replicator{
-		DialOption:  opts,
-		LocalServer: client,
+	ln, err := net.Listen("tcp", a.RPCBindAddr)
+	if err != nil {
+		return err
 	}
 
+	go func() {
+		if err := a.grpcServer.Serve(ln); err != nil {
+			_ = a.Shutdown()
+		}
+	}()
+
+	return nil
+}
+
+func (a *Agent) setupMembership() error {
+	// TODO(threadedstream): add support for secure communication in future
+	conn, err := grpc.Dial(a.RPCBindAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return err
+	}
+  
+	client := api.NewLogClient(conn)
+	a.replicator = &log.Replicator{
+		LocalServer: client,
+	}
+  
 	a.membership, err = discovery.New(a.replicator, &discovery.Config{
-		NodeName: a.cfg.NodeName,
-		BindAddr: a.cfg.BindAddr,
+		NodeName: a.NodeName,
+		BindAddr: a.SerfBindAddr,
 		Tags: map[string]string{
-			"rpc_addr": rpcAddr,
+			discovery.RpcAddrTagKey: a.RPCBindAddr,
 		},
-		StartJoinAddrs: a.cfg.StartJoinAddrs,
+		StartJoinAddrs: a.StartJoinAddrs,
 	})
+
+	if err := a.server.Serve(ln); err != nil {
+		_ = a.Shutdown()
+	}
 
 	return err
 }
@@ -147,12 +175,11 @@ func (a *Agent) Shutdown() error {
 	a.shutdown = true
 	close(a.shutdowns)
 
-	shutdowns := []func() error{
+	shutdown := []func() error{
 		a.membership.Leave,
 		a.replicator.Close,
 		func() error {
-			// @todo this code is blocked forever during tests running, try to investigate the problem
-			// a.server.GracefulStop()
+			a.grpcServer.GracefulStop()
 			return nil
 		},
 		a.log.Close,
@@ -163,6 +190,6 @@ func (a *Agent) Shutdown() error {
 			return err
 		}
 	}
-
+  
 	return nil
 }

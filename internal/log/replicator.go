@@ -10,7 +10,7 @@ import (
 )
 
 type Replicator struct {
-	DialOption  []grpc.DialOption
+	DialOptions []grpc.DialOption
 	LocalServer api.LogClient
 
 	mu      sync.Mutex
@@ -42,7 +42,7 @@ func (r *Replicator) Join(name, addr string) error {
 }
 
 func (r *Replicator) replicate(addr string, leave chan struct{}) {
-	cc, err := grpc.Dial(addr, r.DialOption...)
+	cc, err := grpc.Dial(addr, r.DialOptions...)
 	if err != nil {
 		r.logError(err, "failed to dial", addr)
 		return
